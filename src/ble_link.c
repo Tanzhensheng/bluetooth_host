@@ -10,6 +10,9 @@
 #include <gio/gio.h>
 #include <glib.h>
 
+// Linux backend state is process-wide because BlueZ D-Bus calls and notify
+// subscription are owned by one active BLE link in this demo.
+
 typedef struct {
     GDBusConnection *connection;
     guint signal_subscription_id;
@@ -64,6 +67,8 @@ static int ble_linux_copy_string(char *dst, size_t dst_size, const char *src)
     return MOD_BLE_STATUS_OK;
 }
 
+// BlueZ exposes adapters, devices, services, and characteristics through the
+// ObjectManager tree. Most discovery helpers start from this snapshot.
 static GVariant *ble_linux_get_managed_objects(GError **error)
 {
     return g_dbus_connection_call_sync(
@@ -80,6 +85,8 @@ static GVariant *ble_linux_get_managed_objects(GError **error)
         error);
 }
 
+// Pick the first BlueZ adapter object. A multi-adapter product should select by
+// name or address here; the demo keeps the policy simple and deterministic.
 static int ble_linux_find_adapter_path(void)
 {
     GError *error = NULL;
@@ -111,6 +118,7 @@ static int ble_linux_find_adapter_path(void)
     return status;
 }
 
+// Common wrapper for BlueZ methods whose successful reply carries no payload.
 static int ble_linux_call_void(const char *object_path, const char *interface_name, const char *method_name, GVariant *parameters)
 {
     GError *error = NULL;
@@ -137,6 +145,8 @@ static int ble_linux_call_void(const char *object_path, const char *interface_na
     return MOD_BLE_STATUS_OK;
 }
 
+// Restrict discovery to LE advertisements and suppress duplicate reports; device
+// matching uses the latest Device1 objects from BlueZ, not raw HCI events.
 static int ble_linux_set_discovery_filter(void)
 {
     GVariantBuilder dict_builder;
@@ -151,6 +161,8 @@ static int ble_linux_set_discovery_filter(void)
         g_variant_new("(a{sv})", &dict_builder));
 }
 
+// BlueZ encodes public device addresses as hciX/dev_AA_BB_CC_DD_EE_FF.
+// Building the path directly lets scan-only mode reuse cached Device1 objects.
 static int ble_linux_build_device_path_from_mac(const char *target_id)
 {
     char suffix[18];
@@ -200,6 +212,8 @@ static int ble_linux_device_exists_on_bus(const char *device_path)
     return 1;
 }
 
+// Match the target against Address, Name, or Alias. This supports both fixed MAC
+// testing and user-friendly names such as sensor-terminal-demo.
 static int ble_linux_find_device_path(const char *target_id)
 {
     GError *error = NULL;
@@ -267,6 +281,8 @@ static void ble_linux_log_flags(GVariant *flags)
     g_string_free(joined, TRUE);
 }
 
+// Walk only objects under the matched device path, log every discovered GATT
+// service/characteristic, and cache the configured write/notify paths.
 static int ble_linux_discover_gatt(const ble_link_context_t *ctx)
 {
     GError *error = NULL;
@@ -350,6 +366,8 @@ static int ble_linux_discover_gatt(const ble_link_context_t *ctx)
     return status;
 }
 
+// Notifications arrive as PropertiesChanged signals on the notify characteristic.
+// The latest Value payload is copied into a small synchronous receive buffer.
 static void ble_linux_on_properties_changed(
     GDBusConnection *connection,
     const gchar *sender_name,
@@ -402,6 +420,8 @@ static void ble_linux_on_properties_changed(
     g_variant_unref(invalidated);
 }
 
+// StartDiscovery is asynchronous in BlueZ. Poll the ObjectManager view until the
+// target appears or the caller-provided scan timeout expires.
 static int ble_linux_wait_for_device(const ble_link_context_t *ctx)
 {
     gint64 deadline_us = g_get_monotonic_time() + ((gint64)ctx->config.scan_timeout_ms * 1000);
@@ -423,6 +443,8 @@ static int ble_linux_wait_for_device(const ble_link_context_t *ctx)
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
+// Open performs the bottom-link workflow: system bus -> adapter -> LE scan ->
+// target device -> optional Connect/GATT discovery.
 int ble_link_open(ble_link_context_t *ctx)
 {
     GError *error = NULL;
@@ -493,6 +515,8 @@ int ble_link_open(ble_link_context_t *ctx)
     return MOD_BLE_STATUS_OK;
 }
 
+// Write raw protocol bytes to the configured GATT write characteristic. Protocol
+// framing is intentionally handled by protocol.c, not by this link layer.
 int ble_link_send(ble_link_context_t *ctx, const uint8_t *data, size_t len)
 {
     GVariantBuilder bytes_builder;
@@ -525,6 +549,8 @@ int ble_link_send(ble_link_context_t *ctx, const uint8_t *data, size_t len)
         g_variant_new("(aya{sv})", &bytes_builder, &options_builder));
 }
 
+// Start notifications lazily, then pump the GLib main context until a Value
+// update is received or the receive timeout expires.
 int ble_link_receive(ble_link_context_t *ctx, uint8_t *buf, size_t buf_size, int timeout_ms)
 {
     gint64 deadline_us;
@@ -569,6 +595,8 @@ int ble_link_receive(ble_link_context_t *ctx, uint8_t *buf, size_t buf_size, int
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
+// Tear down in reverse order: stop notify, unsubscribe, disconnect, release the
+// system bus connection, and clear cached object paths.
 void ble_link_close(ble_link_context_t *ctx)
 {
     if (ctx == NULL) {
@@ -595,6 +623,8 @@ void ble_link_close(ble_link_context_t *ctx)
 
 #else
 
+// Stub backend keeps non-Linux or no-GIO builds testable. It validates state and
+// logs traffic, but does not touch BlueZ or hardware.
 int ble_link_open(ble_link_context_t *ctx)
 {
     if (ctx == NULL || ctx->config.target_id[0] == '\0') {
