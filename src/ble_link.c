@@ -212,6 +212,43 @@ static int ble_linux_device_exists_on_bus(const char *device_path)
     return 1;
 }
 
+static int ble_linux_get_services_resolved(int *resolved)
+{
+    GError *error = NULL;
+    GVariant *reply = NULL;
+    GVariant *value = NULL;
+
+    if (resolved == NULL) {
+        return MOD_BLE_STATUS_INVALID_ARG;
+    }
+
+    *resolved = 0;
+    reply = g_dbus_connection_call_sync(
+        g_ble_linux.connection,
+        "org.bluez",
+        g_ble_linux.device_path,
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        g_variant_new("(ss)", "org.bluez.Device1", "ServicesResolved"),
+        G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        NULL,
+        &error);
+
+    if (reply == NULL) {
+        mod_ble_log_error("failed to read ServicesResolved on %s: %s", g_ble_linux.device_path, error->message);
+        g_clear_error(&error);
+        return MOD_BLE_STATUS_IO;
+    }
+
+    g_variant_get(reply, "(v)", &value);
+    *resolved = g_variant_get_boolean(value) ? 1 : 0;
+    g_variant_unref(value);
+    g_variant_unref(reply);
+    return MOD_BLE_STATUS_OK;
+}
+
 // Match the target against Address, Name, or Alias. This supports both fixed MAC
 // testing and user-friendly names such as sensor-terminal-demo.
 static int ble_linux_find_device_path(const char *target_id)
@@ -443,6 +480,27 @@ static int ble_linux_wait_for_device(const ble_link_context_t *ctx)
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
+static int ble_linux_wait_for_services_resolved(const ble_link_context_t *ctx)
+{
+    gint64 deadline_us = g_get_monotonic_time() + ((gint64)ctx->config.scan_timeout_ms * 1000);
+
+    while (g_get_monotonic_time() < deadline_us) {
+        int resolved = 0;
+        int status = ble_linux_get_services_resolved(&resolved);
+        if (status != MOD_BLE_STATUS_OK) {
+            return status;
+        }
+        if (resolved) {
+            mod_ble_log_info("services resolved for device path=%s", g_ble_linux.device_path);
+            return MOD_BLE_STATUS_OK;
+        }
+        g_usleep(100000);
+    }
+
+    mod_ble_log_error("services not resolved for %s within %d ms", ctx->config.target_id, ctx->config.scan_timeout_ms);
+    return MOD_BLE_STATUS_TIMEOUT;
+}
+
 // Open performs the bottom-link workflow: system bus -> adapter -> LE scan ->
 // target device -> optional Connect/GATT discovery.
 int ble_link_open(ble_link_context_t *ctx)
@@ -489,6 +547,11 @@ int ble_link_open(ble_link_context_t *ctx)
     }
 
     status = ble_linux_call_void(g_ble_linux.device_path, "org.bluez.Device1", "Connect", NULL);
+    if (status != MOD_BLE_STATUS_OK) {
+        return status;
+    }
+
+    status = ble_linux_wait_for_services_resolved(ctx);
     if (status != MOD_BLE_STATUS_OK) {
         return status;
     }
