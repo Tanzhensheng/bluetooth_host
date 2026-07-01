@@ -25,6 +25,27 @@ typedef struct {
 
 static ble_linux_state_t g_ble_linux;
 
+static int ble_linux_target_is_mac(const char *target_id)
+{
+    size_t i;
+
+    if (target_id == NULL || strlen(target_id) != 17U) {
+        return 0;
+    }
+
+    for (i = 0; i < 17U; ++i) {
+        if ((i % 3U) == 2U) {
+            if (target_id[i] != ':') {
+                return 0;
+            }
+        } else if (!g_ascii_isxdigit(target_id[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static void ble_linux_state_reset(void)
 {
     (void)memset(&g_ble_linux, 0, sizeof(g_ble_linux));
@@ -81,10 +102,8 @@ static int ble_linux_find_adapter_path(void)
         if (adapter_props != NULL) {
             status = ble_linux_copy_string(g_ble_linux.adapter_path, sizeof(g_ble_linux.adapter_path), object_path);
             g_variant_unref(adapter_props);
-            g_variant_unref(interfaces);
             break;
         }
-        g_variant_unref(interfaces);
     }
 
     g_variant_iter_free(objects);
@@ -116,6 +135,69 @@ static int ble_linux_call_void(const char *object_path, const char *interface_na
 
     g_variant_unref(reply);
     return MOD_BLE_STATUS_OK;
+}
+
+static int ble_linux_set_discovery_filter(void)
+{
+    GVariantBuilder dict_builder;
+
+    g_variant_builder_init(&dict_builder, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&dict_builder, "{sv}", "Transport", g_variant_new_string("le"));
+    g_variant_builder_add(&dict_builder, "{sv}", "DuplicateData", g_variant_new_boolean(FALSE));
+    return ble_linux_call_void(
+        g_ble_linux.adapter_path,
+        "org.bluez.Adapter1",
+        "SetDiscoveryFilter",
+        g_variant_new("(a{sv})", &dict_builder));
+}
+
+static int ble_linux_build_device_path_from_mac(const char *target_id)
+{
+    char suffix[18];
+    size_t i;
+
+    if (!ble_linux_target_is_mac(target_id)) {
+        return MOD_BLE_STATUS_INVALID_ARG;
+    }
+
+    for (i = 0; i < 17U; ++i) {
+        suffix[i] = (target_id[i] == ':') ? '_' : g_ascii_toupper(target_id[i]);
+    }
+    suffix[17] = '\0';
+
+    if (snprintf(g_ble_linux.device_path, sizeof(g_ble_linux.device_path), "%s/dev_%s", g_ble_linux.adapter_path, suffix)
+        >= (int)sizeof(g_ble_linux.device_path)) {
+        return MOD_BLE_STATUS_INVALID_ARG;
+    }
+
+    return MOD_BLE_STATUS_OK;
+}
+
+static int ble_linux_device_exists_on_bus(const char *device_path)
+{
+    GError *error = NULL;
+    GVariant *reply = NULL;
+
+    reply = g_dbus_connection_call_sync(
+        g_ble_linux.connection,
+        "org.bluez",
+        device_path,
+        "org.freedesktop.DBus.Properties",
+        "GetAll",
+        g_variant_new("(s)", "org.bluez.Device1"),
+        G_VARIANT_TYPE("(a{sv})"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        NULL,
+        &error);
+
+    if (reply == NULL) {
+        g_clear_error(&error);
+        return 0;
+    }
+
+    g_variant_unref(reply);
+    return 1;
 }
 
 static int ble_linux_find_device_path(const char *target_id)
@@ -155,14 +237,11 @@ static int ble_linux_find_device_path(const char *target_id)
                     name != NULL ? name : "-",
                     alias != NULL ? alias : "-");
                 g_variant_unref(device_props);
-                g_variant_unref(interfaces);
                 break;
             }
 
             g_variant_unref(device_props);
         }
-
-        g_variant_unref(interfaces);
     }
 
     g_variant_iter_free(objects);
@@ -207,7 +286,6 @@ static int ble_linux_discover_gatt(const ble_client_context_t *ctx)
     g_variant_get(reply, "(a{oa{sa{sv}}})", &objects);
     while (g_variant_iter_loop(objects, "{&o@a{sa{sv}}}", &object_path, &interfaces)) {
         if (!g_str_has_prefix(object_path, g_ble_linux.device_path)) {
-            g_variant_unref(interfaces);
             continue;
         }
 
@@ -252,8 +330,6 @@ static int ble_linux_discover_gatt(const ble_client_context_t *ctx)
                 g_variant_unref(char_props);
             }
         }
-
-        g_variant_unref(interfaces);
         if (status != MOD_BLE_STATUS_OK) {
             break;
         }
@@ -330,6 +406,13 @@ static int ble_linux_wait_for_device(const ble_client_context_t *ctx)
 {
     gint64 deadline_us = g_get_monotonic_time() + ((gint64)ctx->config.scan_timeout_ms * 1000);
 
+    if (ble_linux_target_is_mac(ctx->config.target_id) &&
+        ble_linux_build_device_path_from_mac(ctx->config.target_id) == MOD_BLE_STATUS_OK &&
+        ble_linux_device_exists_on_bus(g_ble_linux.device_path)) {
+        mod_ble_log_info("matched cached device path=%s from MAC", g_ble_linux.device_path);
+        return MOD_BLE_STATUS_OK;
+    }
+
     while (g_get_monotonic_time() < deadline_us) {
         if (ble_linux_find_device_path(ctx->config.target_id) == MOD_BLE_STATUS_OK) {
             return MOD_BLE_STATUS_OK;
@@ -362,6 +445,8 @@ int ble_client_open(ble_client_context_t *ctx)
         return status;
     }
     mod_ble_log_info("using adapter path=%s", g_ble_linux.adapter_path);
+
+    (void)ble_linux_set_discovery_filter();
 
     status = ble_linux_call_void(g_ble_linux.adapter_path, "org.bluez.Adapter1", "StartDiscovery", NULL);
     if (status != MOD_BLE_STATUS_OK) {

@@ -78,7 +78,7 @@ static int test_parse_defaults_without_payload(void)
     if (assert_true(options.config.mode == MOD_BLE_MODE_FULL, "default mode should be full") != 0) {
         return 1;
     }
-    if (assert_true(options.config.scan_timeout_ms == 5000, "default scan timeout should be 5000") != 0) {
+    if (assert_true(options.config.scan_timeout_ms == 15000, "default scan timeout should be 15000") != 0) {
         return 1;
     }
     if (assert_true(options.config.recv_timeout_ms == 3000, "default recv timeout should be 3000") != 0) {

@@ -47,7 +47,7 @@ void demo_cli_options_init(demo_cli_options_t *options)
     }
 
     (void)memset(options, 0, sizeof(*options));
-    options->config.scan_timeout_ms = 5000;
+    options->config.scan_timeout_ms = 15000;
     options->config.recv_timeout_ms = 3000;
     options->config.mode = MOD_BLE_MODE_FULL;
 }
