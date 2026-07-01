@@ -501,6 +501,27 @@ static int ble_linux_wait_for_services_resolved(const ble_link_context_t *ctx)
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
+static int ble_linux_ensure_notify_started(void)
+{
+    int status;
+
+    if (g_ble_linux.notify_char_path[0] == '\0') {
+        return MOD_BLE_STATUS_UNSUPPORTED;
+    }
+    if (g_ble_linux.notify_started) {
+        return MOD_BLE_STATUS_OK;
+    }
+
+    status = ble_linux_call_void(g_ble_linux.notify_char_path, "org.bluez.GattCharacteristic1", "StartNotify", NULL);
+    if (status != MOD_BLE_STATUS_OK) {
+        return status;
+    }
+
+    g_ble_linux.notify_started = 1;
+    mod_ble_log_info("notify started for characteristic=%s", g_ble_linux.notify_char_path);
+    return MOD_BLE_STATUS_OK;
+}
+
 // Open performs the bottom-link workflow: system bus -> adapter -> LE scan ->
 // target device -> optional Connect/GATT discovery.
 int ble_link_open(ble_link_context_t *ctx)
@@ -573,6 +594,11 @@ int ble_link_open(ble_link_context_t *ctx)
             ble_linux_on_properties_changed,
             NULL,
             NULL);
+
+        status = ble_linux_ensure_notify_started();
+        if (status != MOD_BLE_STATUS_OK) {
+            return status;
+        }
     }
 
     return MOD_BLE_STATUS_OK;
@@ -598,6 +624,9 @@ int ble_link_send(ble_link_context_t *ctx, const uint8_t *data, size_t len)
         mod_ble_log_error("write characteristic UUID not configured or not found");
         return MOD_BLE_STATUS_UNSUPPORTED;
     }
+
+    g_ble_linux.notify_ready = 0;
+    g_ble_linux.notify_len = 0U;
 
     g_variant_builder_init(&bytes_builder, G_VARIANT_TYPE("ay"));
     for (size_t i = 0; i < len; ++i) {
@@ -633,14 +662,12 @@ int ble_link_receive(ble_link_context_t *ctx, uint8_t *buf, size_t buf_size, int
     }
 
     if (!g_ble_linux.notify_started) {
-        int status = ble_linux_call_void(g_ble_linux.notify_char_path, "org.bluez.GattCharacteristic1", "StartNotify", NULL);
+        int status = ble_linux_ensure_notify_started();
         if (status != MOD_BLE_STATUS_OK) {
             return status;
         }
-        g_ble_linux.notify_started = 1;
     }
 
-    g_ble_linux.notify_ready = 0;
     deadline_us = g_get_monotonic_time() + ((gint64)timeout_ms * 1000);
     while (g_get_monotonic_time() < deadline_us) {
         while (g_main_context_iteration(NULL, FALSE)) {

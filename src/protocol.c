@@ -17,6 +17,7 @@ static uint8_t protocol_checksum(const protocol_frame_t *frame)
     sum += frame->control;
     sum += frame->pseq;
     sum += frame->fseq;
+    sum += frame->prot;
     for (i = 0; i < frame->data_len; ++i) {
         sum += frame->data[i];
     }
@@ -33,7 +34,7 @@ int protocol_encode(const protocol_frame_t *frame, uint8_t *out, size_t out_size
         return MOD_BLE_STATUS_INVALID_ARG;
     }
 
-    payload_len = frame->data_len + 3U;
+    payload_len = frame->data_len + 4U;
     if (frame->data_len > MOD_BLE_MAX_FRAME_DATA_LEN) {
         return MOD_BLE_STATUS_INVALID_ARG;
     }
@@ -72,11 +73,11 @@ int protocol_decode(const uint8_t *raw, size_t raw_len, protocol_frame_t *frame)
     if ((size_t)length_field + 6U != raw_len) {
         return MOD_BLE_STATUS_IO;
     }
-    if (length_field < 3U) {
+    if (length_field < 4U) {
         return MOD_BLE_STATUS_IO;
     }
 
-    payload_len = (size_t)length_field - 3U;
+    payload_len = (size_t)length_field - 4U;
     if (payload_len > MOD_BLE_MAX_FRAME_DATA_LEN) {
         return MOD_BLE_STATUS_UNSUPPORTED;
     }
