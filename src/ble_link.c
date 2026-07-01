@@ -1,4 +1,4 @@
-#include "ble_client.h"
+#include "ble_link.h"
 
 #include "mod_ble_log.h"
 
@@ -267,7 +267,7 @@ static void ble_linux_log_flags(GVariant *flags)
     g_string_free(joined, TRUE);
 }
 
-static int ble_linux_discover_gatt(const ble_client_context_t *ctx)
+static int ble_linux_discover_gatt(const ble_link_context_t *ctx)
 {
     GError *error = NULL;
     GVariant *reply = NULL;
@@ -402,7 +402,7 @@ static void ble_linux_on_properties_changed(
     g_variant_unref(invalidated);
 }
 
-static int ble_linux_wait_for_device(const ble_client_context_t *ctx)
+static int ble_linux_wait_for_device(const ble_link_context_t *ctx)
 {
     gint64 deadline_us = g_get_monotonic_time() + ((gint64)ctx->config.scan_timeout_ms * 1000);
 
@@ -423,7 +423,7 @@ static int ble_linux_wait_for_device(const ble_client_context_t *ctx)
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
-int ble_client_open(ble_client_context_t *ctx)
+int ble_link_open(ble_link_context_t *ctx)
 {
     GError *error = NULL;
     int status;
@@ -493,7 +493,7 @@ int ble_client_open(ble_client_context_t *ctx)
     return MOD_BLE_STATUS_OK;
 }
 
-int ble_client_send(ble_client_context_t *ctx, const uint8_t *data, size_t len)
+int ble_link_send(ble_link_context_t *ctx, const uint8_t *data, size_t len)
 {
     GVariantBuilder bytes_builder;
     GVariantBuilder options_builder;
@@ -525,7 +525,7 @@ int ble_client_send(ble_client_context_t *ctx, const uint8_t *data, size_t len)
         g_variant_new("(aya{sv})", &bytes_builder, &options_builder));
 }
 
-int ble_client_receive(ble_client_context_t *ctx, uint8_t *buf, size_t buf_size, int timeout_ms)
+int ble_link_receive(ble_link_context_t *ctx, uint8_t *buf, size_t buf_size, int timeout_ms)
 {
     gint64 deadline_us;
 
@@ -569,7 +569,7 @@ int ble_client_receive(ble_client_context_t *ctx, uint8_t *buf, size_t buf_size,
     return MOD_BLE_STATUS_TIMEOUT;
 }
 
-void ble_client_close(ble_client_context_t *ctx)
+void ble_link_close(ble_link_context_t *ctx)
 {
     if (ctx == NULL) {
         return;
@@ -588,26 +588,26 @@ void ble_client_close(ble_client_context_t *ctx)
         g_object_unref(g_ble_linux.connection);
     }
 
-    mod_ble_log_info("ble_client_close target=%s", ctx->config.target_id);
+    mod_ble_log_info("ble_link_close target=%s", ctx->config.target_id);
     ble_linux_state_reset();
     ctx->is_connected = 0;
 }
 
 #else
 
-int ble_client_open(ble_client_context_t *ctx)
+int ble_link_open(ble_link_context_t *ctx)
 {
     if (ctx == NULL || ctx->config.target_id[0] == '\0') {
         return MOD_BLE_STATUS_INVALID_ARG;
     }
 
     ctx->is_connected = 1;
-    mod_ble_log_info("ble_client_open target=%s", ctx->config.target_id);
+    mod_ble_log_info("ble_link_open target=%s", ctx->config.target_id);
     mod_ble_log_info("non-Linux or no gio found; using stub transport");
     return MOD_BLE_STATUS_OK;
 }
 
-int ble_client_send(ble_client_context_t *ctx, const uint8_t *data, size_t len)
+int ble_link_send(ble_link_context_t *ctx, const uint8_t *data, size_t len)
 {
     size_t i;
 
@@ -618,7 +618,7 @@ int ble_client_send(ble_client_context_t *ctx, const uint8_t *data, size_t len)
         return MOD_BLE_STATUS_STATE;
     }
 
-    mod_ble_log_info("ble_client_send len=%zu", len);
+    mod_ble_log_info("ble_link_send len=%zu", len);
     (void)fprintf(stdout, "[TX] ");
     for (i = 0; i < len; ++i) {
         (void)fprintf(stdout, "%02X ", data[i]);
@@ -627,7 +627,7 @@ int ble_client_send(ble_client_context_t *ctx, const uint8_t *data, size_t len)
     return MOD_BLE_STATUS_OK;
 }
 
-int ble_client_receive(ble_client_context_t *ctx, uint8_t *buf, size_t buf_size, int timeout_ms)
+int ble_link_receive(ble_link_context_t *ctx, uint8_t *buf, size_t buf_size, int timeout_ms)
 {
     static const uint8_t stub_response[] = {0xA5, 0x03, 0x00, 0x80, 0x00, 0x80, 0x10, 0x00, 0x96};
 
@@ -639,17 +639,17 @@ int ble_client_receive(ble_client_context_t *ctx, uint8_t *buf, size_t buf_size,
     }
 
     (void)memcpy(buf, stub_response, sizeof(stub_response));
-    mod_ble_log_info("ble_client_receive timeout_ms=%d stub_len=%zu", timeout_ms, sizeof(stub_response));
+    mod_ble_log_info("ble_link_receive timeout_ms=%d stub_len=%zu", timeout_ms, sizeof(stub_response));
     return (int)sizeof(stub_response);
 }
 
-void ble_client_close(ble_client_context_t *ctx)
+void ble_link_close(ble_link_context_t *ctx)
 {
     if (ctx == NULL) {
         return;
     }
 
-    mod_ble_log_info("ble_client_close target=%s", ctx->config.target_id);
+    mod_ble_log_info("ble_link_close target=%s", ctx->config.target_id);
     ctx->is_connected = 0;
 }
 

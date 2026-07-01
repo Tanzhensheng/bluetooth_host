@@ -5,8 +5,8 @@
 ## 当前范围
 
 - 对外接口固定为 socket 风格：`open/send/recv/close`
-- 协议层预留 `A5/L/C/PSEQ/FSEQ/PROT/DATA/CS/96` 的编解码和会话状态机
-- BLE 传输层在 Linux 下优先走 BlueZ D-Bus；其他平台回退为 stub
+- 协议层集中在 `protocol.c/h`：负责 `A5/L/C/PSEQ/FSEQ/PROT/DATA/CS/96` 的封包、解析和会话状态机
+- 底层链路集中在 `ble_link.c/h`：Linux 下优先走 BlueZ D-Bus；其他平台回退为 stub
 - GATT 的 `Service UUID / Characteristic UUID / 写入方式 / Notify 方式` 仍允许先留空
 
 ## 目录结构
@@ -16,17 +16,15 @@ include/
   mod_ble.h
   mod_ble_types.h
   mod_ble_log.h
-  ble_client.h
-  proto_codec.h
-  proto_session.h
+  ble_link.h       BlueZ 底层链路接口
+  protocol.h       协议封包、解析和会话接口
   demo_cli.h
 src/
   main.c
   demo_cli.c
   mod_ble_log.c
-  ble_client.c
-  proto_codec.c
-  proto_session.c
+  ble_link.c       BlueZ D-Bus 扫描、连接、GATT 写入和通知
+  protocol.c       A5/L/C/PSEQ/FSEQ/PROT/DATA/CS/96 封包解析
   mod_ble.c
 docs/
   gatt_placeholders.md
@@ -63,8 +61,7 @@ sudo apt-get install -y libglib2.0-dev pkg-config
 
 ```bash
 gcc -std=c11 -Wall -Wextra -Wpedantic -I include \
-  src/main.c src/mod_ble.c src/mod_ble_log.c src/ble_client.c \
-  src/proto_codec.c src/proto_session.c \
+  src/main.c src/mod_ble.c src/mod_ble_log.c src/ble_link.c src/protocol.c \
   -o build/mod_ble_demo
 ```
 

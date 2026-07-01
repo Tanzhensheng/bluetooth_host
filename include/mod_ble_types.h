@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
     mod_ble_config_t config;
     int is_connected;
-} ble_client_context_t;
+} ble_link_context_t;
 
 typedef struct {
     uint8_t control;
@@ -57,12 +57,13 @@ typedef struct {
     uint8_t prot;
     uint8_t data[MOD_BLE_MAX_FRAME_DATA_LEN];
     size_t data_len;
-} proto_frame_t;
+} protocol_frame_t;
 
 typedef struct {
     uint8_t next_pseq;
     uint8_t last_fseq;
     int is_open;
-} proto_session_t;
+} protocol_session_t;
+
 
 #endif

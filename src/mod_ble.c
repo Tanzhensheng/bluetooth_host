@@ -1,15 +1,14 @@
 #include "mod_ble.h"
 
-#include "ble_client.h"
+#include "ble_link.h"
 #include "mod_ble_log.h"
-#include "proto_codec.h"
-#include "proto_session.h"
+#include "protocol.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static ble_client_context_t g_client;
-static proto_session_t g_session;
+static ble_link_context_t g_client;
+static protocol_session_t g_session;
 static mod_ble_config_t g_config;
 static int g_is_open = 0;
 
@@ -51,19 +50,19 @@ int mod_ble_open(const char *target_id)
         (void)snprintf(g_client.config.target_id, sizeof(g_client.config.target_id), "%s", target_id);
     }
 
-    status = ble_client_open(&g_client);
+    status = ble_link_open(&g_client);
     if (status != MOD_BLE_STATUS_OK) {
         return status;
     }
 
-    proto_session_init(&g_session);
+    protocol_session_init(&g_session);
     g_is_open = 1;
     return MOD_BLE_STATUS_OK;
 }
 
 int mod_ble_send(const uint8_t *data, size_t len, uint8_t prot)
 {
-    proto_frame_t frame;
+    protocol_frame_t frame;
     uint8_t raw[MOD_BLE_MAX_HEX_DUMP_LEN];
     size_t raw_len = 0U;
     int status;
@@ -72,24 +71,24 @@ int mod_ble_send(const uint8_t *data, size_t len, uint8_t prot)
         return MOD_BLE_STATUS_STATE;
     }
 
-    status = proto_session_build_request(&g_session, (mod_ble_proto_t)prot, data, len, &frame);
+    status = protocol_session_build_request(&g_session, (mod_ble_proto_t)prot, data, len, &frame);
     if (status != MOD_BLE_STATUS_OK) {
         return status;
     }
 
-    status = proto_codec_encode(&frame, raw, sizeof(raw), &raw_len);
+    status = protocol_encode(&frame, raw, sizeof(raw), &raw_len);
     if (status != MOD_BLE_STATUS_OK) {
         return status;
     }
 
     mod_ble_log_info("mod_ble_send pseq=%u fseq=0x%02X prot=0x%02X", frame.pseq, frame.fseq, prot);
-    return ble_client_send(&g_client, raw, raw_len);
+    return ble_link_send(&g_client, raw, raw_len);
 }
 
 int mod_ble_recv(uint8_t *buf, size_t buf_size, int timeout_ms)
 {
     uint8_t raw[MOD_BLE_MAX_HEX_DUMP_LEN];
-    proto_frame_t frame;
+    protocol_frame_t frame;
     int raw_len;
     int status;
 
@@ -97,12 +96,12 @@ int mod_ble_recv(uint8_t *buf, size_t buf_size, int timeout_ms)
         return MOD_BLE_STATUS_INVALID_ARG;
     }
 
-    raw_len = ble_client_receive(&g_client, raw, sizeof(raw), timeout_ms);
+    raw_len = ble_link_receive(&g_client, raw, sizeof(raw), timeout_ms);
     if (raw_len < 0) {
         return raw_len;
     }
 
-    status = proto_session_parse_response(&g_session, raw, (size_t)raw_len, &frame);
+    status = protocol_session_parse_response(&g_session, raw, (size_t)raw_len, &frame);
     if (status != MOD_BLE_STATUS_OK) {
         return status;
     }
@@ -121,7 +120,7 @@ void mod_ble_close(void)
         return;
     }
 
-    ble_client_close(&g_client);
+    ble_link_close(&g_client);
     (void)memset(&g_client, 0, sizeof(g_client));
     (void)memset(&g_session, 0, sizeof(g_session));
     g_is_open = 0;

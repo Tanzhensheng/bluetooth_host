@@ -1,4 +1,4 @@
-#include "proto_codec.h"
+#include "protocol.h"
 
 #include <string.h>
 
@@ -9,7 +9,7 @@ enum {
     PROTO_MIN_FRAME_SIZE = 9
 };
 
-static uint8_t proto_codec_checksum(const proto_frame_t *frame)
+static uint8_t protocol_checksum(const protocol_frame_t *frame)
 {
     size_t i;
     uint32_t sum = 0U;
@@ -24,7 +24,7 @@ static uint8_t proto_codec_checksum(const proto_frame_t *frame)
     return (uint8_t)(sum & 0xFFU);
 }
 
-int proto_codec_encode(const proto_frame_t *frame, uint8_t *out, size_t out_size, size_t *out_len)
+int protocol_encode(const protocol_frame_t *frame, uint8_t *out, size_t out_size, size_t *out_len)
 {
     size_t payload_len;
     uint16_t length_field;
@@ -50,13 +50,13 @@ int proto_codec_encode(const proto_frame_t *frame, uint8_t *out, size_t out_size
     out[5] = frame->fseq;
     out[6] = frame->prot;
     (void)memcpy(&out[7], frame->data, frame->data_len);
-    out[7 + frame->data_len] = proto_codec_checksum(frame);
+    out[7 + frame->data_len] = protocol_checksum(frame);
     out[8 + frame->data_len] = PROTO_FRAME_TAIL;
     *out_len = 9U + frame->data_len;
     return MOD_BLE_STATUS_OK;
 }
 
-int proto_codec_decode(const uint8_t *raw, size_t raw_len, proto_frame_t *frame)
+int protocol_decode(const uint8_t *raw, size_t raw_len, protocol_frame_t *frame)
 {
     size_t payload_len;
     uint8_t checksum;
@@ -88,9 +88,53 @@ int proto_codec_decode(const uint8_t *raw, size_t raw_len, proto_frame_t *frame)
     frame->prot = raw[6];
     frame->data_len = payload_len;
     (void)memcpy(frame->data, &raw[7], payload_len);
-    checksum = proto_codec_checksum(frame);
+    checksum = protocol_checksum(frame);
     if (checksum != raw[7 + payload_len]) {
         return MOD_BLE_STATUS_IO;
     }
     return MOD_BLE_STATUS_OK;
+}
+void protocol_session_init(protocol_session_t *session)
+{
+    if (session == NULL) {
+        return;
+    }
+
+    (void)memset(session, 0, sizeof(*session));
+    session->is_open = 1;
+}
+
+int protocol_session_build_request(protocol_session_t *session, mod_ble_proto_t prot, const uint8_t *payload,
+    size_t payload_len, protocol_frame_t *frame)
+{
+    if (session == NULL || payload == NULL || frame == NULL || payload_len > MOD_BLE_MAX_FRAME_DATA_LEN) {
+        return MOD_BLE_STATUS_INVALID_ARG;
+    }
+    if (!session->is_open) {
+        return MOD_BLE_STATUS_STATE;
+    }
+
+    (void)memset(frame, 0, sizeof(*frame));
+    frame->control = 0x43U;
+    frame->pseq = session->next_pseq++;
+    frame->fseq = 0x80U;
+    frame->prot = (uint8_t)prot;
+    frame->data_len = payload_len;
+    (void)memcpy(frame->data, payload, payload_len);
+    return MOD_BLE_STATUS_OK;
+}
+
+int protocol_session_parse_response(protocol_session_t *session, const uint8_t *raw, size_t raw_len, protocol_frame_t *frame)
+{
+    int status;
+
+    if (session == NULL) {
+        return MOD_BLE_STATUS_INVALID_ARG;
+    }
+
+    status = protocol_decode(raw, raw_len, frame);
+    if (status == MOD_BLE_STATUS_OK && frame != NULL) {
+        session->last_fseq = frame->fseq;
+    }
+    return status;
 }
