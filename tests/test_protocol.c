@@ -95,12 +95,43 @@ static int test_decode_round_trips_two_byte_length_frame(void)
     return 0;
 }
 
+static int test_decode_accepts_zero_payload_ack_frame(void)
+{
+    static const uint8_t raw[] = {0xA5U, 0x04U, 0x00U, 0x80U, 0x00U, 0x80U, 0x10U, 0x10U, 0x96U};
+    protocol_frame_t frame;
+    int status;
+
+    (void)memset(&frame, 0, sizeof(frame));
+    status = protocol_decode(raw, sizeof(raw), &frame);
+    if (assert_true(status == MOD_BLE_STATUS_OK, "decode zero-payload ack should succeed") != 0) {
+        return 1;
+    }
+    if (assert_true(frame.control == 0x80U, "ack control should round-trip") != 0) {
+        return 1;
+    }
+    if (assert_true(frame.pseq == 0x00U, "ack pseq should round-trip") != 0) {
+        return 1;
+    }
+    if (assert_true(frame.fseq == 0x80U, "ack fseq should round-trip") != 0) {
+        return 1;
+    }
+    if (assert_true(frame.prot == 0x10U, "ack prot should round-trip") != 0) {
+        return 1;
+    }
+    if (assert_true(frame.data_len == 0U, "ack payload should be empty") != 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
 int main(void)
 {
     int failed = 0;
 
     failed |= test_encode_uses_two_byte_length_and_includes_prot_in_length_and_checksum();
     failed |= test_decode_round_trips_two_byte_length_frame();
+    failed |= test_decode_accepts_zero_payload_ack_frame();
 
     if (failed != 0) {
         return 1;

@@ -70,7 +70,7 @@ int protocol_decode(const uint8_t *raw, size_t raw_len, protocol_frame_t *frame)
         return MOD_BLE_STATUS_IO;
     }
     length_field = (uint16_t)raw[1] | ((uint16_t)raw[2] << 8);
-    if ((size_t)length_field + 6U != raw_len) {
+    if ((size_t)length_field + 5U != raw_len) {
         return MOD_BLE_STATUS_IO;
     }
     if (length_field < 4U) {
