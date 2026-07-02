@@ -23,6 +23,7 @@ static int test_parse_discovery_args_and_payload(void)
         "--notify-char-uuid", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "--discover-only",
         "--scan-timeout-ms", "4500",
+        "--flow", "repair",
         "01", "02", "03"
     };
     demo_cli_options_t options;
@@ -40,6 +41,9 @@ static int test_parse_discovery_args_and_payload(void)
         return 1;
     }
     if (assert_true(options.config.scan_timeout_ms == 4500, "scan timeout should parse") != 0) {
+        return 1;
+    }
+    if (assert_true(options.config.flow_mode == MOD_BLE_FLOW_REPAIR, "flow mode should parse") != 0) {
         return 1;
     }
     if (assert_true(strcmp(options.config.gatt.service_uuid, "12345678-1234-5678-1234-56789abcdef0") == 0, "service uuid should parse") != 0) {
@@ -82,6 +86,9 @@ static int test_parse_defaults_without_payload(void)
         return 1;
     }
     if (assert_true(options.config.recv_timeout_ms == 3000, "default recv timeout should be 3000") != 0) {
+        return 1;
+    }
+    if (assert_true(options.config.flow_mode == MOD_BLE_FLOW_NORMAL, "default flow should be normal") != 0) {
         return 1;
     }
     if (assert_true(options.payload_len == 0U, "payload should default to empty") != 0) {

@@ -64,21 +64,21 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    status = mod_ble_send(options.payload, options.payload_len, MOD_BLE_PROTO_NEAR_FIELD);
-    if (status != MOD_BLE_STATUS_OK) {
-        mod_ble_log_error("mod_ble_send failed: %d", status);
-        mod_ble_close();
-        return EXIT_FAILURE;
-    }
-
-    rx_len = mod_ble_recv(rx_buf, sizeof(rx_buf), options.config.recv_timeout_ms);
+    rx_len = mod_ble_run_flow(options.payload, options.payload_len, MOD_BLE_PROTO_NEAR_FIELD, rx_buf, sizeof(rx_buf));
     if (rx_len < 0) {
-        mod_ble_log_error("mod_ble_recv failed: %d", rx_len);
+        mod_ble_log_error("mod_ble_run_flow failed: %d", rx_len);
         mod_ble_close();
         return EXIT_FAILURE;
     }
 
     mod_ble_log_info("demo completed with %d bytes of payload", rx_len);
+    if (rx_len > 0) {
+        (void)fprintf(stdout, "[PAYLOAD] ");
+        for (int i = 0; i < rx_len; ++i) {
+            (void)fprintf(stdout, "%02X ", rx_buf[i]);
+        }
+        (void)fprintf(stdout, "\n");
+    }
     mod_ble_close();
     return EXIT_SUCCESS;
 }

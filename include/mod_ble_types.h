@@ -30,6 +30,12 @@ typedef enum {
     MOD_BLE_MODE_SCAN_ONLY = 2
 } mod_ble_mode_t;
 
+typedef enum {
+    MOD_BLE_FLOW_NORMAL = 0,
+    MOD_BLE_FLOW_ABNORMAL = 1,
+    MOD_BLE_FLOW_REPAIR = 2
+} mod_ble_flow_mode_t;
+
 typedef struct {
     char service_uuid[MOD_BLE_MAX_UUID_LEN];
     char write_char_uuid[MOD_BLE_MAX_UUID_LEN];
@@ -42,6 +48,7 @@ typedef struct {
     int scan_timeout_ms;
     int recv_timeout_ms;
     mod_ble_mode_t mode;
+    mod_ble_flow_mode_t flow_mode;
     int verbose;
 } mod_ble_config_t;
 
